@@ -11,37 +11,27 @@ import org.springframework.stereotype.Service;
 public class PaymentService {
 
     private final ApplicationEventPublisher publisher;
+    private final GatewayPagamentoClient gatewayClient; // Injeção da nova classe
 
-    public PaymentService(ApplicationEventPublisher publisher) {
+    // O Spring vai injetar o Gateway aqui automaticamente
+    public PaymentService(ApplicationEventPublisher publisher, GatewayPagamentoClient gatewayClient) {
         this.publisher = publisher;
+        this.gatewayClient = gatewayClient;
     }
 
     @EventListener
     public void processarPagamento(PedidoCriadoEvent event) {
         try {
-            System.out.println("[PaymentService] 2. Tentando cobrar cartão...");
-            realizarCobrancaExterna();
+            System.out.println("[PaymentService] 2. Processando pagamento do pedido " + event.pedidoId());
 
-            // Se passar pelo Circuit Breaker:
+            gatewayClient.realizarCobrancaExterna();
+
+            // Se passou pelo gateway sem erro, publica o sucesso
             publisher.publishEvent(new PagamentoAprovadoEvent(event.pedidoId()));
 
         } catch (Exception e) {
-            System.out.println("[PaymentService] ERRO: " + e.getMessage());
-            // Aqui poderíamos disparar um evento de "FalhaPagamento" se quiséssemos
+            System.out.println("[PaymentService] ERRO CAPTURADO: " + e.getMessage());
+            // O fluxo para aqui. O pedido não é confirmado.
         }
-    }
-
-    // PADRÃO 2: CIRCUIT BREAKER
-    @CircuitBreaker(name = "gatewayPagamento", fallbackMethod = "pagamentoFallback")
-    public void realizarCobrancaExterna() {
-        // SIMULAÇÃO DE ERRO: 30% de chance de falha no banco
-        if (Math.random() > 1.1) {
-            throw new RuntimeException("Timeout no Banco Externo!");
-        }
-        System.out.println("[PaymentService] -> Cartão cobrado com sucesso.");
-    }
-
-    public void pagamentoFallback(Exception e) {
-        System.out.println("[PaymentService] -> [CIRCUIT BREAKER ABERTO] Serviço protegido. Erro ignorado.");
     }
 }
